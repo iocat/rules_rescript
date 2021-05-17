@@ -26,15 +26,16 @@ rescript_compiler = rule(
 )
 
 RescriptModuleProvider = provider(fields = [
-    "cmiFile",
-    "cmjFile",
     "astFile",
     # Optional iast.
     "iastFile",
+    "cmiFile",
+    "cmjFile",
     "jsFile",
     # Includes jsFile and all of its transitive deps
     "jsDepset",
-    "srcFile",
+
+    # For computing include paths tied to bsc.
     "moduleArtifactsDir",
 ])
 
@@ -83,11 +84,9 @@ def dropNone(l):
 # collects all interfaces and js files of the dependencies as a depset
 def collectCmijAndJsDepSet(ctx):
     return depset([], transitive = [depset(item) for item in [[
-        # mod[RescriptModuleProvider].astFile,
         mod[RescriptModuleProvider].cmiFile,
         mod[RescriptModuleProvider].cmjFile,
         mod[RescriptModuleProvider].jsFile,
-        # mod[RescriptModuleProvider].srcFile,
     ] for mod in ctx.attr.deps]])
 
 def _rescript_module_impl(ctx):
@@ -174,7 +173,6 @@ def _rescript_module_impl(ctx):
             ),
         ),
         RescriptModuleProvider(
-            srcFile = ctx.file.src,
             astFile = astFile,
             cmiFile = cmiFile,
             cmjFile = cmjFile,
