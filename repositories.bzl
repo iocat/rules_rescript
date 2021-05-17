@@ -17,19 +17,19 @@ def _impl(repository_ctx):
 
     repository_ctx.template(
         "WORKSPACE",
-        Label("//rescript/rescript-rules:templates/WORKSPACE.tmpl"),
+        Label("//:templates/WORKSPACE.tmpl"),
         substitutions = template_ctx,
         executable = False,
     )
     repository_ctx.template(
         "BUILD",
-        Label("//rescript/rescript-rules:templates/BUILD.tmpl.bzl"),
+        Label("//:templates/BUILD.tmpl.bzl"),
         substitutions = template_ctx,
         executable = False,
     )
     repository_ctx.template(
         "rules.bzl",
-        Label("//rescript/rescript-rules:templates/rules.tmpl.bzl"),
+        Label("//:templates/rules.tmpl.bzl"),
         substitutions = template_ctx,
         executable = False,
     )
