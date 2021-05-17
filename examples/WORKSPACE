@@ -1,9 +1,6 @@
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-http_archive(
+local_repository(
     name = "iocat_rules_rescript",
-    sha256 = "76f00cacd089d0605a9c203bbf2d067f5804824435af870e905f0ef621d0fd57",
-    strip_prefix = "rules_rescript-d6a42c2b072880338cf9a7b4a189151bfa58a85e",
-    urls = ["https://github.com/iocat/rules_rescript/archive/d6a42c2b072880338cf9a7b4a189151bfa58a85e.tar.gz"],
+    path = "..",
 )
 
 load("@iocat_rules_rescript//:repositories.bzl", "rescript_repository")

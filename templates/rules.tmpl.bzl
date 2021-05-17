@@ -47,7 +47,6 @@ def _perhaps_compile_to_iast(ctx, moduleArtifactsDir = ""):
     iastArgs = ctx.actions.args()
     iastArgs.add("-bs-v", "{{COMPILER_VERSION}}")
     iastArgs.add("-bs-ast")
-    iastArgs.add("-absname")
     iastArgs.add("-o", iastFile)
     iastArgs.add(ctx.file.interface)
 
@@ -66,7 +65,6 @@ def _compile_to_ast(ctx, moduleArtifactsDir = ""):
     astArgs = ctx.actions.args()
     astArgs.add("-bs-v", "{{COMPILER_VERSION}}")
     astArgs.add("-bs-ast")
-    astArgs.add("-absname")
     astArgs.add("-o", astFile)
     astArgs.add(ctx.file.src)
 
@@ -109,7 +107,6 @@ def _rescript_module_impl(ctx):
         # Generates all targets cmi, cmj and js all at the same time.
         cmiCmjJsArgs = ctx.actions.args()
         cmiCmjJsArgs.add("-bs-v", "{{COMPILER_VERSION}}")
-        cmiCmjJsArgs.add("-absname")
         cmiCmjJsArgs.add("-I", cmiFile.dirname)  # include the cmi dir.
         for depModuleDir in depModuleDirs:
             cmiCmjJsArgs.add("-I", depModuleDir)
@@ -126,18 +123,19 @@ def _rescript_module_impl(ctx):
             arguments = [cmiCmjJsArgs],
         )
 
-    # Module with interface provided.
+        # Module with interface provided.
     else:
         # Generates cmi separately.
         cmiArgs = ctx.actions.args()
+        cmiArgs.add("-I", ctx.file.interface.dirname)
         for depModuleDir in depModuleDirs:
-            cmiCmjJsArgs.add("-I", depModuleDir)
+            cmiArgs.add("-I", depModuleDir)
         cmiArgs.add("-o", cmiFile)
         cmiArgs.add(iastFile)
         ctx.actions.run_shell(
             mnemonic = "CompileToCmi",
             tools = [ctx.attr.compiler[CompilerInfo].bsc],
-            inputs = [iastFile] + collectCmijAndJsDepSet(ctx).to_list(),
+            inputs = [iastFile, ctx.file.interface] + collectCmijAndJsDepSet(ctx).to_list(),
             outputs = [cmiFile],
             command = "{} $@".format(ctx.attr.compiler[CompilerInfo].bsc.path),
             arguments = [cmiArgs],
@@ -154,7 +152,7 @@ def _rescript_module_impl(ctx):
         ctx.actions.run_shell(
             mnemonic = "CompileToCmjJs",
             tools = [ctx.attr.compiler[CompilerInfo].bsc],
-            inputs = [astFile, cmiFile] + collectCmijAndJsDepSet(ctx).to_list(),
+            inputs = [astFile, ctx.file.src, cmiFile] + collectCmijAndJsDepSet(ctx).to_list(),
             outputs = [cmjFile, jsFile],
             command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, jsFile.path),
             arguments = [cmjJsArgs],
