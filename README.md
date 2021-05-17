@@ -1,6 +1,8 @@
 # rules_rescript
 Bazel Rules for Rescript
 
+### 🚧 🚧 Project is under construction. PRs are welcomed. 🚧 🚧
+
 ## How to turn your repository into a rescript repo:
 
 In your WORKSPACE file, add the following snippet and run rescript_repository to loads the neccessary rescript dependency:
@@ -47,7 +49,7 @@ let map: (Stream.t<'a>, 'a => 'b) => Stream.t<'b>
 
 Then, your BUILD file is: 
 ```bazel
-// example/BUILD
+# example/BUILD
 load("@rescript_rules//:rules.bzl", "rescript_module")
 
 rescript_module (
