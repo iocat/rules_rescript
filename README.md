@@ -11,9 +11,9 @@ In your WORKSPACE file, add the following snippet and run rescript_repository to
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_archive(
     name = "iocat_rules_rescript",
-    sha256 = "734cd22aea7ca061e52b3a9ab4f62d3b992e0f83fc146fcd0dc443e28ec6b7ca",
-    strip_prefix = "rules_rescript-d70deabc4bf73a66f0ad3b7b6ef7c224430b2279",
-    urls = ["https://github.com/iocat/rules_rescript/archive/d70deabc4bf73a66f0ad3b7b6ef7c224430b2279.tar.gz"],
+    sha256 = "38bb513b586aa2fea27af5ae0cf2546e8edf50c39ec8f8b3823a587e4765e13e",
+    strip_prefix = "rules_rescript-3c6305a96c83607dd83cde7de575deda661c6679",
+    urls = ["https://github.com/iocat/rules_rescript/archive/3c6305a96c83607dd83cde7de575deda661c6679.tar.gz"],
 )
 
 load("@iocat_rules_rescript//:repositories.bzl", "rescript_repository")
