@@ -34,7 +34,7 @@ RescriptModuleProvider = provider(fields = [
     "jsFile",
     # Includes jsFile and all of its transitive deps
     "jsDepset",
-
+    "dataDepset",
     # For computing include paths tied to bsc.
     "moduleArtifactsDir",
 ])
@@ -81,16 +81,25 @@ def _compile_to_ast(ctx, moduleArtifactsDir = ""):
 def dropNone(l):
     return [item for item in l if item != None]
 
+def unique(l):
+    set = {}
+    for item in l:
+        set[item] = True
+    return set.keys()
+
 # collects all interfaces and js files of the dependencies as a depset
-def collectCmijAndJsDepSet(ctx):
+def collectCmijAndJsDepSet(deps):
     return depset([], transitive = [depset(item) for item in [[
         mod[RescriptModuleProvider].cmiFile,
         mod[RescriptModuleProvider].cmjFile,
         mod[RescriptModuleProvider].jsFile,
-    ] for mod in ctx.attr.deps]])
+    ] for mod in deps]])
 
 def _rescript_module_impl(ctx):
-    moduleArtifactsDir = "_" + ctx.label.name + "/"
+    # This is supposedly the directory that stores output artifacts relative to
+    # the rescript_module build target.
+    # Currently, set to the same dir as the target.
+    moduleArtifactsDir = ""
     astFile = _compile_to_ast(ctx, moduleArtifactsDir = moduleArtifactsDir)
     iastFile = _perhaps_compile_to_iast(ctx, moduleArtifactsDir = moduleArtifactsDir)
 
@@ -99,7 +108,9 @@ def _rescript_module_impl(ctx):
     cmjFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".cmj")
     jsFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".js")
 
-    depModuleDirs = [mod[RescriptModuleProvider].moduleArtifactsDir for mod in ctx.attr.deps]
+    # includes dependencies's artifacts and jsFile artifacts in the search paths.
+    depsArtifacts = collectCmijAndJsDepSet(ctx.attr.deps)
+    depModuleDirs = unique([depArtifact.dirname for depArtifact in depsArtifacts.to_list()])
 
     # Module without interface
     if iastFile == None:
@@ -116,14 +127,13 @@ def _rescript_module_impl(ctx):
         ctx.actions.run_shell(
             mnemonic = "CompileToCmiCmjJs",
             tools = [ctx.attr.compiler[CompilerInfo].bsc],
-            inputs = [astFile] + collectCmijAndJsDepSet(ctx).to_list(),
+            inputs = [ctx.file.src, astFile] + depsArtifacts.to_list(),
             outputs = [cmiFile, cmjFile, jsFile],
             command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, jsFile.path),
             arguments = [cmiCmjJsArgs],
         )
 
-        # Module with interface provided.
-    else:
+    else:  # Module with interface provided.
         # Generates cmi separately.
         cmiArgs = ctx.actions.args()
         cmiArgs.add("-I", ctx.file.interface.dirname)
@@ -134,7 +144,7 @@ def _rescript_module_impl(ctx):
         ctx.actions.run_shell(
             mnemonic = "CompileToCmi",
             tools = [ctx.attr.compiler[CompilerInfo].bsc],
-            inputs = [iastFile, ctx.file.interface] + collectCmijAndJsDepSet(ctx).to_list(),
+            inputs = [ctx.file.interface, iastFile] + depsArtifacts.to_list(),
             outputs = [cmiFile],
             command = "{} $@".format(ctx.attr.compiler[CompilerInfo].bsc.path),
             arguments = [cmiArgs],
@@ -151,7 +161,7 @@ def _rescript_module_impl(ctx):
         ctx.actions.run_shell(
             mnemonic = "CompileToCmjJs",
             tools = [ctx.attr.compiler[CompilerInfo].bsc],
-            inputs = [astFile, ctx.file.src, cmiFile] + collectCmijAndJsDepSet(ctx).to_list(),
+            inputs = [ctx.file.src, astFile, cmiFile] + depsArtifacts.to_list(),
             outputs = [cmjFile, jsFile],
             command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, jsFile.path),
             arguments = [cmjJsArgs],
@@ -171,6 +181,11 @@ def _rescript_module_impl(ctx):
                 ),
                 transitive = [dep[RescriptModuleProvider].jsDepset for dep in ctx.attr.deps],
             ),
+            #files = depset([jsFile]),
+            runfiles = ctx.runfiles(
+                files = ctx.files.data,
+                transitive_files = depset([], transitive = [dep[RescriptModuleProvider].dataDepset for dep in ctx.attr.deps]),
+            ),
         ),
         RescriptModuleProvider(
             astFile = astFile,
@@ -178,8 +193,9 @@ def _rescript_module_impl(ctx):
             cmjFile = cmjFile,
             jsFile = jsFile,
             jsDepset = depset([jsFile], transitive = [dep[RescriptModuleProvider].jsDepset for dep in ctx.attr.deps]),
+            dataDepset = depset(ctx.files.data, transitive = [dep[RescriptModuleProvider].dataDepset for dep in ctx.attr.deps]),
             iastFile = iastFile,
-            moduleArtifactsDir = jsFile.dirname,
+            moduleArtifactsDir = cmiFile.dirname,
         ),
     ]
 
@@ -189,7 +205,7 @@ rescript_module = rule(
     attrs = {
         "compiler": attr.label(
             # TODO: This needs to be a sensible default.
-            default = Label("@{{REPO_NAME}}//:darwin"),
+            default = Label("@{{REPO_NAME}}//compiler:darwin"),
             providers = [CompilerInfo],
         ),
         "src": attr.label(
@@ -202,23 +218,83 @@ rescript_module = rule(
             allow_single_file = [".resi"],
         ),
         "deps": attr.label_list(
+            doc = "List of dependencies, must be rescript_module targets.",
             providers = [RescriptModuleProvider],
         ),
-        "data": attr.label_list(allow_files = True),
+        "data": attr.label_list(
+            doc = "List of data files to include at runtime (consumed by rescript_binary).",
+            allow_files = True,
+        ),
     },
 )
 
 def _rescript_binary_impl(ctx):
-    pass
+    srcFile = ctx.file.src
+    moduleArtifactsDir = ""
+
+    astFile = _compile_to_ast(ctx, moduleArtifactsDir = moduleArtifactsDir)
+
+    cmiFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".cmi")
+    cmjFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".cmj")
+    jsFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".js")
+
+    depsArtifacts = collectCmijAndJsDepSet(ctx.attr.deps)
+    depModuleDirs = unique([depArtifact.dirname for depArtifact in depsArtifacts.to_list()])
+
+    # Generates all targets cmi, cmj and js all at the same time.
+    cmiCmjJsArgs = ctx.actions.args()
+    cmiCmjJsArgs.add("-bs-v", "{{COMPILER_VERSION}}")
+    cmiCmjJsArgs.add("-I", cmiFile.dirname)  # include the cmi dir.
+    for depModuleDir in depModuleDirs:
+        cmiCmjJsArgs.add("-I", depModuleDir)
+    cmiCmjJsArgs.add("-o", cmiFile)
+    cmiCmjJsArgs.add("-o", cmjFile)
+    cmiCmjJsArgs.add(astFile)
+
+    ctx.actions.run_shell(
+        mnemonic = "CompileToCmiCmjJs",
+        tools = [ctx.attr.compiler[CompilerInfo].bsc],
+        inputs = [ctx.file.src, astFile] + depsArtifacts.to_list(),
+        outputs = [cmiFile, cmjFile, jsFile],
+        command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, jsFile.path),
+        arguments = [cmiCmjJsArgs],
+    )
+
+    return [
+        DefaultInfo(
+            executable = jsFile,
+            runfiles = ctx.runfiles(
+                files = ctx.files.data,
+                transitive_files = depset(
+                    [],
+                    transitive = [dep[RescriptModuleProvider].dataDepset for dep in ctx.attr.deps] + [dep[RescriptModuleProvider].jsDepset for dep in ctx.attr.deps],
+                ),
+            ),
+        ),
+    ]
 
 rescript_binary = rule(
     implementation = _rescript_binary_impl,
     executable = True,
     attrs = {
         "compiler": attr.label(
-            # TODO: This needs to be a sensible default.
-            default = Label("@{{REPO_NAME}}//:darwin"),
+            # TODO(iocat): This needs to be a sensible default depending on what the current OS is.
+            # TODO(iocat): Supports for windows needs this updated.
+            default = Label("@{{REPO_NAME}}//compiler:darwin"),
             providers = [CompilerInfo],
+        ),
+        "src": attr.label(
+            doc = "Rescript source file",
+            mandatory = True,
+            allow_single_file = [".res"],
+        ),
+        "deps": attr.label_list(
+            doc = "List of dependencies, must be rescript_module targets.",
+            providers = [RescriptModuleProvider],
+        ),
+        "data": attr.label_list(
+            doc = "List of data files to include at runtime.",
+            allow_files = True,
         ),
     },
 )

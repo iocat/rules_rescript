@@ -23,7 +23,7 @@ rescript_repository(
 )
 ```
 
-# Turn your module(s) into build Bazel targets
+# Turn your module(s) into Bazel build targets
 Say, you have the following Rescript code:
 
 ```rescript
