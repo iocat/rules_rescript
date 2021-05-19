@@ -5,15 +5,15 @@ Bazel Rules for Rescript
 
 ## How to turn your repository into a rescript repo:
 
-In your WORKSPACE file, add the following snippet and run rescript_repository to loads the neccessary rescript dependency:
+In your WORKSPACE file, add the following snippet and run rescript_repository to load the neccessary rescript rules:
 
 ```bazel
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_archive(
     name = "iocat_rules_rescript",
-    sha256 = "38bb513b586aa2fea27af5ae0cf2546e8edf50c39ec8f8b3823a587e4765e13e",
-    strip_prefix = "rules_rescript-3c6305a96c83607dd83cde7de575deda661c6679",
-    urls = ["https://github.com/iocat/rules_rescript/archive/3c6305a96c83607dd83cde7de575deda661c6679.tar.gz"],
+    sha256 = "52e24089222482f9b1646079fa375d9c8662aa104597470b6ff5fd9ebeb78ac8",
+    strip_prefix = "rules_rescript-452c9d0d49ce13e8a40be8f31cc1929078b7f16c",
+    urls = ["https://github.com/iocat/rules_rescript/archive/452c9d0d49ce13e8a40be8f31cc1929078b7f16c.tar.gz"],
 )
 
 load("@iocat_rules_rescript//:repositories.bzl", "rescript_repository")
