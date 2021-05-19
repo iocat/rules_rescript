@@ -1,6 +1,6 @@
 local_repository(
     name = "iocat_rules_rescript",
-    path = "..",
+    path = "../..",
 )
 
 load("@iocat_rules_rescript//:repositories.bzl", "rescript_repository")

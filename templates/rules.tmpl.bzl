@@ -25,67 +25,59 @@ rescript_compiler = rule(
     },
 )
 
+RescriptOutputArtifacts = provider(fields = [
+    "cmi",
+    "cmj",
+    "js",
+])
 RescriptModuleProvider = provider(fields = [
-    "astFile",
-    # Optional iast.
-    "iastFile",
-    "cmiFile",
-    "cmjFile",
-    "jsFile",
-    # Includes jsFile and all of its transitive deps
-    "jsDepset",
-    "dataDepset",
+    "module_artifacts",
 
-    # Recursively constructs a namespace map
-    "moduleTree",
-
-    # For computing include paths tied to bsc.
-    "moduleArtifactsDir",
+    # Includes js_file and all of its transitive deps
+    "js_depset",
+    "data_depset",
 ])
 
-def _perhaps_compile_to_iast(ctx, interfaceFile, iastFile):
-    if interfaceFile == None:
+def _perhaps_compile_to_iast(ctx, interface_file, iast_file):
+    if interface_file == None:
         return None
 
-    iastArgs = ctx.actions.args()
-    iastArgs.add("-bs-v", "{{COMPILER_VERSION}}")
-    iastArgs.add("-bs-ast")
-    iastArgs.add("-o", iastFile)
-    iastArgs.add(interfaceFile)
+    iast_args = ctx.actions.args()
+    iast_args.add("-bs-v", "{{COMPILER_VERSION}}")
+    iast_args.add("-bs-ast")
+    iast_args.add("-o", iast_file)
+    iast_args.add(interface_file)
 
     ctx.actions.run(
         mnemonic = "CompileToiAST",
         executable = ctx.attr.compiler[CompilerInfo].bsc,
-        arguments = [iastArgs],
-        inputs = depset([interfaceFile]),
-        outputs = [iastFile],
+        arguments = [iast_args],
+        inputs = depset([interface_file]),
+        outputs = [iast_file],
     )
 
-def _compile_to_ast(ctx, srcFile, astFile):
-    astArgs = ctx.actions.args()
-    astArgs.add("-bs-v", "{{COMPILER_VERSION}}")
-    astArgs.add("-bs-ast")
-    astArgs.add("-o", astFile)
-    astArgs.add(srcFile)
+def _compile_to_ast(ctx, src_file, ast_file):
+    ast_args = ctx.actions.args()
+    ast_args.add("-bs-v", "{{COMPILER_VERSION}}")
+    ast_args.add("-bs-ast")
+    ast_args.add("-o", ast_file)
+    ast_args.add(src_file)
 
     ctx.actions.run(
         mnemonic = "CompileToAST",
         executable = ctx.attr.compiler[CompilerInfo].bsc,
-        arguments = [astArgs],
-        inputs = depset([srcFile]),
-        outputs = [astFile],
+        arguments = [ast_args],
+        inputs = depset([src_file]),
+        outputs = [ast_file],
     )
 
-def dropNone(l):
-    return [item for item in l if item != None]
-
-def unique(l):
+def _unique(l):
     set = {}
     for item in l:
         set[item] = True
     return set.keys()
 
-def join_path(is_windows, items):
+def _join_path(is_windows, items):
     parts = [item for item in items if item != ""]
 
     if is_windows:
@@ -93,120 +85,116 @@ def join_path(is_windows, items):
 
     return "/".join(parts)
 
-# collects all interfaces and js files of the dependencies as a depset
-def collectCmijAndJsDepSet(deps):
+def _collect_cmi_cmj_and_js_depset(deps):
     return depset([], transitive = [depset(item) for item in [[
-        mod[RescriptModuleProvider].cmiFile,
-        mod[RescriptModuleProvider].cmjFile,
-        mod[RescriptModuleProvider].jsFile,
+        mod[RescriptModuleProvider].module_artifacts.cmi,
+        mod[RescriptModuleProvider].module_artifacts.cmj,
+        mod[RescriptModuleProvider].module_artifacts.js,
     ] for mod in deps]])
 
+def _get_module_name(src):
+    return src.basename[:-4]
+
 def _rescript_module_impl(ctx):
-    # This is supposedly the directory that stores output artifacts relative to
-    # the rescript_module build target.
-    # Currently, set to the same dir as the target.
-    moduleArtifactsDir = ""
+    ast_file = ctx.actions.declare_file(_join_path(ctx.attr.is_windows, [_get_module_name(ctx.file.src) + ".ast"]))
+    _compile_to_ast(ctx, ctx.file.src, ast_file)
 
-    astFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".ast"]))
-    _compile_to_ast(ctx, ctx.file.src, astFile)
-
-    iastFile = None
-    if ctx.file.interface != None: 
-        iastFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".iast"]))
-        _perhaps_compile_to_iast(ctx, ctx.file.interface, iastFile)
+    iast_file = None
+    if ctx.file.interface != None:
+        iast_file = ctx.actions.declare_file(_join_path(ctx.attr.is_windows, [_get_module_name(ctx.file.src) + ".iast"]))
+        _perhaps_compile_to_iast(ctx, ctx.file.interface, iast_file)
 
     # Generate cmi, cmj, and js artifacts
-    cmiFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmi"]))
-    cmjFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmj"]))
-    jsFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".js"]))
+    cmi_file = ctx.actions.declare_file(_join_path(ctx.attr.is_windows, [_get_module_name(ctx.file.src) + ".cmi"]))
+    cmj_file = ctx.actions.declare_file(_join_path(ctx.attr.is_windows, [_get_module_name(ctx.file.src) + ".cmj"]))
+    js_file = ctx.actions.declare_file(_join_path(ctx.attr.is_windows, [_get_module_name(ctx.file.src) + ".js"]))
 
-    # includes dependencies's artifacts and jsFile artifacts in the search paths.
-    depsArtifacts = collectCmijAndJsDepSet(ctx.attr.deps)
-    depModuleDirs = unique([depArtifact.dirname for depArtifact in depsArtifacts.to_list()])
+    # includes dependencies's artifacts and js_file artifacts in the search paths.
+    deps_artifacts = _collect_cmi_cmj_and_js_depset(ctx.attr.deps)
+    dep_module_dirs = _unique([deps_artifact.dirname for deps_artifact in deps_artifacts.to_list()])
 
     # Module without interface
-    if iastFile == None:
+    if iast_file == None:
         # Generates all targets cmi, cmj and js all at the same time.
-        cmiCmjJsArgs = ctx.actions.args()
-        cmiCmjJsArgs.add("-bs-v", "{{COMPILER_VERSION}}")
-        cmiCmjJsArgs.add("-I", cmiFile.dirname)  # include the cmi dir.
-        for depModuleDir in depModuleDirs:
-            cmiCmjJsArgs.add("-I", depModuleDir)
-        cmiCmjJsArgs.add("-o", cmiFile)
-        cmiCmjJsArgs.add("-o", cmjFile)
-        cmiCmjJsArgs.add(astFile)
+        cmi_cmj_js_args = ctx.actions.args()
+        cmi_cmj_js_args.add("-bs-v", "{{COMPILER_VERSION}}")
+        cmi_cmj_js_args.add("-I", cmi_file.dirname)  # include the cmi dir.
+        for dep_module_dir in dep_module_dirs:
+            cmi_cmj_js_args.add("-I", dep_module_dir)
+        cmi_cmj_js_args.add("-o", cmi_file)
+        cmi_cmj_js_args.add("-o", cmj_file)
+        cmi_cmj_js_args.add(ast_file)
 
         ctx.actions.run_shell(
             mnemonic = "CompileToCmiCmjJs",
             tools = [ctx.attr.compiler[CompilerInfo].bsc],
-            inputs = [ctx.file.src, astFile] + depsArtifacts.to_list(),
-            outputs = [cmiFile, cmjFile, jsFile],
-            command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, jsFile.path),
-            arguments = [cmiCmjJsArgs],
+            inputs = [ctx.file.src, ast_file] + deps_artifacts.to_list(),
+            outputs = [cmi_file, cmj_file, js_file],
+            command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, js_file.path),
+            arguments = [cmi_cmj_js_args],
         )
 
     else:  # Module with interface provided.
         # Generates cmi separately.
-        cmiArgs = ctx.actions.args()
-        cmiArgs.add("-I", ctx.file.interface.dirname)
-        for depModuleDir in depModuleDirs:
-            cmiArgs.add("-I", depModuleDir)
-        cmiArgs.add("-o", cmiFile)
-        cmiArgs.add(iastFile)
+        cmi_args = ctx.actions.args()
+        cmi_args.add("-I", ctx.file.interface.dirname)
+        for dep_module_dir in dep_module_dirs:
+            cmi_args.add("-I", dep_module_dir)
+        cmi_args.add("-o", cmi_file)
+        cmi_args.add(iast_file)
         ctx.actions.run_shell(
             mnemonic = "CompileToCmi",
             tools = [ctx.attr.compiler[CompilerInfo].bsc],
-            inputs = [ctx.file.interface, iastFile] + depsArtifacts.to_list(),
-            outputs = [cmiFile],
+            inputs = [ctx.file.interface, iast_file] + deps_artifacts.to_list(),
+            outputs = [cmi_file],
             command = "{} $@".format(ctx.attr.compiler[CompilerInfo].bsc.path),
-            arguments = [cmiArgs],
+            arguments = [cmi_args],
         )
 
         # Generates cmj and js files
-        cmjJsArgs = ctx.actions.args()
-        cmjJsArgs.add("-bs-read-cmi")  # Read the CMI file generated from previous step (from iAST file.)
-        cmjJsArgs.add("-I", cmiFile.dirname)  # include the cmi dir.
-        for depModuleDir in depModuleDirs:
-            cmjJsArgs.add("-I", depModuleDir)
-        cmjJsArgs.add("-o", cmjFile)
-        cmjJsArgs.add(astFile)
+        cmi_js_args = ctx.actions.args()
+        cmi_js_args.add("-bs-read-cmi")  # Read the CMI file generated from previous step (from iAST file.)
+        cmi_js_args.add("-I", cmi_file.dirname)  # include the cmi dir.
+        for dep_module_dir in dep_module_dirs:
+            cmi_js_args.add("-I", dep_module_dir)
+        cmi_js_args.add("-o", cmj_file)
+        cmi_js_args.add(ast_file)
         ctx.actions.run_shell(
             mnemonic = "CompileToCmjJs",
             tools = [ctx.attr.compiler[CompilerInfo].bsc],
-            inputs = [ctx.file.src, astFile, cmiFile] + depsArtifacts.to_list(),
-            outputs = [cmjFile, jsFile],
-            command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, jsFile.path),
-            arguments = [cmjJsArgs],
+            inputs = [ctx.file.src, ast_file, cmi_file] + deps_artifacts.to_list(),
+            outputs = [cmj_file, js_file],
+            command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, js_file.path),
+            arguments = [cmi_js_args],
         )
 
+    module_artifacts = RescriptOutputArtifacts(
+        cmi = cmi_file,
+        cmj = cmj_file,
+        js = js_file,
+    )
+
+    js_files = [js_file]
+    output_files = [
+        module_artifacts.js,
+        module_artifacts.cmj,
+        module_artifacts.cmi,
+    ]
     return [
         DefaultInfo(
             files = depset(
-                dropNone(
-                    [
-                        astFile,
-                        cmiFile,
-                        cmjFile,
-                        jsFile,
-                        iastFile,
-                    ],
-                ),
-                transitive = [dep[RescriptModuleProvider].jsDepset for dep in ctx.attr.deps],
+                output_files,
+                transitive = [dep[RescriptModuleProvider].js_depset for dep in ctx.attr.deps],
             ),
             runfiles = ctx.runfiles(
-                files = ctx.files.data,
-                transitive_files = depset([], transitive = [dep[RescriptModuleProvider].dataDepset for dep in ctx.attr.deps]),
+                files = ctx.files.data + [module_artifacts.js],
+                transitive_files = depset([], transitive = [dep[RescriptModuleProvider].data_depset for dep in ctx.attr.deps]),
             ),
         ),
         RescriptModuleProvider(
-            astFile = astFile,
-            cmiFile = cmiFile,
-            cmjFile = cmjFile,
-            jsFile = jsFile,
-            jsDepset = depset([jsFile], transitive = [dep[RescriptModuleProvider].jsDepset for dep in ctx.attr.deps]),
-            dataDepset = depset(ctx.files.data, transitive = [dep[RescriptModuleProvider].dataDepset for dep in ctx.attr.deps]),
-            iastFile = iastFile,
-            moduleArtifactsDir = cmiFile.dirname,
+            js_depset = depset(js_files, transitive = [dep[RescriptModuleProvider].js_depset for dep in ctx.attr.deps]),
+            data_depset = depset(ctx.files.data, transitive = [dep[RescriptModuleProvider].data_depset for dep in ctx.attr.deps]),
+            module_artifacts = module_artifacts,
         ),
     ]
 
@@ -284,45 +272,44 @@ def rescript_module(
 
 def _rescript_binary_impl(ctx):
     srcFile = ctx.file.src
-    moduleArtifactsDir = ""
 
-    astFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".ast"]))
-    _compile_to_ast(ctx, ctx.file.src, astFile)
+    ast_file = ctx.actions.declare_file(_join_path(ctx.attr.is_windows, [ctx.label.name + ".ast"]))
+    _compile_to_ast(ctx, ctx.file.src, ast_file)
 
-    cmiFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmi"]))
-    cmjFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmj"]))
-    jsFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".js"]))
+    cmi_file = ctx.actions.declare_file(_join_path(ctx.attr.is_windows, [ctx.label.name + ".cmi"]))
+    cmj_file = ctx.actions.declare_file(_join_path(ctx.attr.is_windows, [ctx.label.name + ".cmj"]))
+    js_file = ctx.actions.declare_file(_join_path(ctx.attr.is_windows, [ctx.label.name + ".js"]))
 
-    depsArtifacts = collectCmijAndJsDepSet(ctx.attr.deps)
-    depModuleDirs = unique([depArtifact.dirname for depArtifact in depsArtifacts.to_list()])
+    deps_artifacts = _collect_cmi_cmj_and_js_depset(ctx.attr.deps)
+    dep_module_dirs = _unique([deps_artifact.dirname for deps_artifact in deps_artifacts.to_list()])
 
     # Generates all targets cmi, cmj and js all at the same time.
-    cmiCmjJsArgs = ctx.actions.args()
-    cmiCmjJsArgs.add("-bs-v", "{{COMPILER_VERSION}}")
-    cmiCmjJsArgs.add("-I", cmiFile.dirname)  # include the cmi dir.
-    for depModuleDir in depModuleDirs:
-        cmiCmjJsArgs.add("-I", depModuleDir)
-    cmiCmjJsArgs.add("-o", cmiFile)
-    cmiCmjJsArgs.add("-o", cmjFile)
-    cmiCmjJsArgs.add(astFile)
+    cmi_cmj_js_args = ctx.actions.args()
+    cmi_cmj_js_args.add("-bs-v", "{{COMPILER_VERSION}}")
+    cmi_cmj_js_args.add("-I", cmi_file.dirname)  # include the cmi dir.
+    for dep_module_dir in dep_module_dirs:
+        cmi_cmj_js_args.add("-I", dep_module_dir)
+    cmi_cmj_js_args.add("-o", cmi_file)
+    cmi_cmj_js_args.add("-o", cmj_file)
+    cmi_cmj_js_args.add(ast_file)
 
     ctx.actions.run_shell(
         mnemonic = "CompileToCmiCmjJs",
         tools = [ctx.attr.compiler[CompilerInfo].bsc],
-        inputs = [ctx.file.src, astFile] + depsArtifacts.to_list(),
-        outputs = [cmiFile, cmjFile, jsFile],
-        command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, jsFile.path),
-        arguments = [cmiCmjJsArgs],
+        inputs = [ctx.file.src, ast_file] + deps_artifacts.to_list(),
+        outputs = [cmi_file, cmj_file, js_file],
+        command = "{} $@ > {}".format(ctx.attr.compiler[CompilerInfo].bsc.path, js_file.path),
+        arguments = [cmi_cmj_js_args],
     )
 
     return [
         DefaultInfo(
-            executable = jsFile,
+            executable = js_file,
             runfiles = ctx.runfiles(
                 files = ctx.files.data,
                 transitive_files = depset(
                     [],
-                    transitive = [dep[RescriptModuleProvider].dataDepset for dep in ctx.attr.deps] + [dep[RescriptModuleProvider].jsDepset for dep in ctx.attr.deps],
+                    transitive = [dep[RescriptModuleProvider].data_depset for dep in ctx.attr.deps] + [dep[RescriptModuleProvider].js_depset for dep in ctx.attr.deps],
                 ),
             ),
         ),

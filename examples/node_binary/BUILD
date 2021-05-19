@@ -2,29 +2,27 @@ load("@rescript_rules//:rules.bzl", "rescript_binary", "rescript_module")
 load("@build_bazel_rules_nodejs//:index.bzl", "nodejs_binary")
 
 package(
-  default_visibility = ["//visibility:public"]
+    default_visibility = ["//visibility:public"],
 )
 
 rescript_module(
-    name = "streams",
-    src = "Streams.res",
-    interface = "Streams.resi",
+    name = "nums",
+    src = "Nums.res",
 )
 
 rescript_binary(
-    name = "main",
+    name = "main_rescript",
     src = "Main.res",
     deps = [
+        ":nums",
         "//streams",
-        "//nums",
     ],
 )
 
 nodejs_binary(
-    name = "main_entry",
+    name = "main",
     data = [
-        "@npm//rescript"
+        "@npm//rescript",
     ],
-    entry_point = ":main",
+    entry_point = ":main_rescript",
 )
-

@@ -1,0 +1,3 @@
+module StreamUtil = {
+  include StreamUtil
+}
