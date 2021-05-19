@@ -35,48 +35,46 @@ RescriptModuleProvider = provider(fields = [
     # Includes jsFile and all of its transitive deps
     "jsDepset",
     "dataDepset",
+
+    # Recursively constructs a namespace map
+    "moduleTree",
+
     # For computing include paths tied to bsc.
     "moduleArtifactsDir",
 ])
 
-def _perhaps_compile_to_iast(ctx, moduleArtifactsDir = ""):
-    if ctx.file.interface == None:
+def _perhaps_compile_to_iast(ctx, interfaceFile, iastFile):
+    if interfaceFile == None:
         return None
-
-    iastFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".iast")
 
     iastArgs = ctx.actions.args()
     iastArgs.add("-bs-v", "{{COMPILER_VERSION}}")
     iastArgs.add("-bs-ast")
     iastArgs.add("-o", iastFile)
-    iastArgs.add(ctx.file.interface)
+    iastArgs.add(interfaceFile)
 
     ctx.actions.run(
         mnemonic = "CompileToiAST",
         executable = ctx.attr.compiler[CompilerInfo].bsc,
         arguments = [iastArgs],
-        inputs = depset([ctx.file.interface]),
+        inputs = depset([interfaceFile]),
         outputs = [iastFile],
     )
-    return iastFile
 
-def _compile_to_ast(ctx, moduleArtifactsDir = ""):
-    astFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".ast")
-
+def _compile_to_ast(ctx, srcFile, astFile):
     astArgs = ctx.actions.args()
     astArgs.add("-bs-v", "{{COMPILER_VERSION}}")
     astArgs.add("-bs-ast")
     astArgs.add("-o", astFile)
-    astArgs.add(ctx.file.src)
+    astArgs.add(srcFile)
 
     ctx.actions.run(
         mnemonic = "CompileToAST",
         executable = ctx.attr.compiler[CompilerInfo].bsc,
         arguments = [astArgs],
-        inputs = depset([ctx.file.src]),
+        inputs = depset([srcFile]),
         outputs = [astFile],
     )
-    return astFile
 
 def dropNone(l):
     return [item for item in l if item != None]
@@ -88,11 +86,12 @@ def unique(l):
     return set.keys()
 
 def join_path(is_windows, items):
-    items = [item for item in items if item != ""]
+    parts = [item for item in items if item != ""]
 
     if is_windows:
-        return "\\".join(items)
-    return "/".join(items)
+        return "\\".join(parts)
+
+    return "/".join(parts)
 
 # collects all interfaces and js files of the dependencies as a depset
 def collectCmijAndJsDepSet(deps):
@@ -107,10 +106,16 @@ def _rescript_module_impl(ctx):
     # the rescript_module build target.
     # Currently, set to the same dir as the target.
     moduleArtifactsDir = ""
-    astFile = _compile_to_ast(ctx, moduleArtifactsDir = moduleArtifactsDir)
-    iastFile = _perhaps_compile_to_iast(ctx, moduleArtifactsDir = moduleArtifactsDir)
 
-    # Generate cmi, cmj, and js
+    astFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".ast"]))
+    _compile_to_ast(ctx, ctx.file.src, astFile)
+
+    iastFile = None
+    if ctx.file.interface != None: 
+        iastFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".iast"]))
+        _perhaps_compile_to_iast(ctx, ctx.file.interface, iastFile)
+
+    # Generate cmi, cmj, and js artifacts
     cmiFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmi"]))
     cmjFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmj"]))
     jsFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".js"]))
@@ -281,7 +286,8 @@ def _rescript_binary_impl(ctx):
     srcFile = ctx.file.src
     moduleArtifactsDir = ""
 
-    astFile = _compile_to_ast(ctx, moduleArtifactsDir = moduleArtifactsDir)
+    astFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".ast"]))
+    _compile_to_ast(ctx, ctx.file.src, astFile)
 
     cmiFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmi"]))
     cmjFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmj"]))
