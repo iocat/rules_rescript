@@ -87,6 +87,13 @@ def unique(l):
         set[item] = True
     return set.keys()
 
+def join_path(is_windows, items):
+    items = [item for item in items if item != ""]
+
+    if is_windows:
+        return "\\".join(items)
+    return "/".join(items)
+
 # collects all interfaces and js files of the dependencies as a depset
 def collectCmijAndJsDepSet(deps):
     return depset([], transitive = [depset(item) for item in [[
@@ -104,9 +111,9 @@ def _rescript_module_impl(ctx):
     iastFile = _perhaps_compile_to_iast(ctx, moduleArtifactsDir = moduleArtifactsDir)
 
     # Generate cmi, cmj, and js
-    cmiFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".cmi")
-    cmjFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".cmj")
-    jsFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".js")
+    cmiFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmi"]))
+    cmjFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmj"]))
+    jsFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".js"]))
 
     # includes dependencies's artifacts and jsFile artifacts in the search paths.
     depsArtifacts = collectCmijAndJsDepSet(ctx.attr.deps)
@@ -181,7 +188,6 @@ def _rescript_module_impl(ctx):
                 ),
                 transitive = [dep[RescriptModuleProvider].jsDepset for dep in ctx.attr.deps],
             ),
-            #files = depset([jsFile]),
             runfiles = ctx.runfiles(
                 files = ctx.files.data,
                 transitive_files = depset([], transitive = [dep[RescriptModuleProvider].dataDepset for dep in ctx.attr.deps]),
@@ -199,15 +205,15 @@ def _rescript_module_impl(ctx):
         ),
     ]
 
-rescript_module = rule(
+_rescript_module = rule(
     implementation = _rescript_module_impl,
     executable = False,
     attrs = {
         "compiler": attr.label(
-            # TODO: This needs to be a sensible default.
             default = Label("@{{REPO_NAME}}//compiler:darwin"),
             providers = [CompilerInfo],
         ),
+        "is_windows": attr.bool(),
         "src": attr.label(
             doc = "Rescript source file",
             allow_single_file = [".res"],
@@ -228,15 +234,58 @@ rescript_module = rule(
     },
 )
 
+def get_is_windows():
+    select(
+        {
+            "@platforms//os:windows": True,
+            "//conditions:default": False,
+        },
+    )
+
+def get_compiler():
+    select(
+        {
+            "@platforms//os:osx": "@{{REPO_NAME}}//compiler:darwin",
+            "@platforms//os:windows": "@{{REPO_NAME}}//compiler:windows",
+            "@platforms//os:linux": "@{{REPO_NAME}}//compiler:linux",
+            "//conditions:default": None,
+        },
+    )
+
+def rescript_module(
+        name,
+        src,
+        interface = None,
+        deps = [],
+        data = [],
+        **kwargs):
+    """
+    Produces a rescript module's artifacts.
+    """
+    _rescript_module(
+        name = name,
+        src = src,
+        interface = interface,
+        deps = deps,
+        data = data,
+
+        # Private attribute not expected to be provided
+        is_windows = get_is_windows(),
+        compiler = get_compiler(),
+        **kwargs
+    )
+
+######################################################################################################
+
 def _rescript_binary_impl(ctx):
     srcFile = ctx.file.src
     moduleArtifactsDir = ""
 
     astFile = _compile_to_ast(ctx, moduleArtifactsDir = moduleArtifactsDir)
 
-    cmiFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".cmi")
-    cmjFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".cmj")
-    jsFile = ctx.actions.declare_file(moduleArtifactsDir + ctx.label.name + ".js")
+    cmiFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmi"]))
+    cmjFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".cmj"]))
+    jsFile = ctx.actions.declare_file(join_path(ctx.attr.is_windows, [moduleArtifactsDir, ctx.label.name + ".js"]))
 
     depsArtifacts = collectCmijAndJsDepSet(ctx.attr.deps)
     depModuleDirs = unique([depArtifact.dirname for depArtifact in depsArtifacts.to_list()])
@@ -273,16 +322,15 @@ def _rescript_binary_impl(ctx):
         ),
     ]
 
-rescript_binary = rule(
+_rescript_binary = rule(
     implementation = _rescript_binary_impl,
     executable = True,
     attrs = {
         "compiler": attr.label(
-            # TODO(iocat): This needs to be a sensible default depending on what the current OS is.
-            # TODO(iocat): Supports for windows needs this updated.
             default = Label("@{{REPO_NAME}}//compiler:darwin"),
             providers = [CompilerInfo],
         ),
+        "is_windows": attr.bool(),
         "src": attr.label(
             doc = "Rescript source file",
             mandatory = True,
@@ -298,3 +346,22 @@ rescript_binary = rule(
         ),
     },
 )
+
+def rescript_binary(
+        name,
+        src,
+        deps = [],
+        data = [],
+        **kwargs):
+    """
+    Produces Js binary artifacts.
+    """
+    _rescript_binary(
+        name = name,
+        src = src,
+        deps = deps,
+        data = data,
+        is_windows = get_is_windows(),
+        compiler = get_compiler(),
+        **kwargs
+    )

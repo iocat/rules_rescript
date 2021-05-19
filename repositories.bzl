@@ -28,6 +28,12 @@ def _impl(repository_ctx):
         substitutions = template_ctx,
         executable = False,
     )
+    repository_ctx.template(
+        "compiler/BUILD",
+        Label("//:templates/compiler/BUILD.tmpl.bzl"),
+        substitutions = template_ctx,
+        executable = False,
+    )
 
     rescript_repo = repository_ctx.download_and_extract(
         url = "https://github.com/rescript-lang/rescript-compiler/archive/refs/tags/{}.tar.gz".format(repository_ctx.attr.compiler_version),
@@ -35,12 +41,7 @@ def _impl(repository_ctx):
         stripPrefix = "rescript-compiler-{}".format(repository_ctx.attr.compiler_version),
         sha256 = get_sha256_if_known(repository_ctx.attr.compiler_version),
     )
-    repository_ctx.template(
-        "compiler/BUILD",
-        Label("//:templates/compiler/BUILD.tmpl.bzl"),
-        substitutions = template_ctx,
-        executable = False,
-    )
+    
 
 _rescript_repository = repository_rule(
     implementation = _impl,

@@ -1,5 +1,8 @@
+open Nums
 open Streams
 
-fromArray([1, 2, 3, 4])
-->keepMap(item => item->Nums.isEven ? Some(item * 2): None)
+
+fromArray(Belt.Array.range(0, 1_000))
+->keepMap(item => item->isEven ? Some(item * 2): None)
+->map(item => item*item)
 ->consumeEach(item => item->Js.log)
